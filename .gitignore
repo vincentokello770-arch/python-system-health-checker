@@ -5,3 +5,6 @@ venv/
 .env
 .vscode/
 .idea/
+
+# Generated health reports
+reports/
