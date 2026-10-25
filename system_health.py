@@ -1,4 +1,6 @@
-﻿import platform
+﻿
+import logging
+import platform
 import shutil
 import sys
 from datetime import datetime
@@ -7,6 +9,33 @@ from pathlib import Path
 
 WARNING_THRESHOLD = 10.0
 CRITICAL_THRESHOLD = 5.0
+
+LOGGER = logging.getLogger("system_health")
+LOGGER.setLevel(logging.INFO)
+LOGGER.propagate = False
+
+
+def configure_logging(log_dir=Path("logs")):
+    """Configure persistent file logging without blocking the health check."""
+    if LOGGER.handlers:
+        return True
+
+    try:
+        log_dir = Path(log_dir)
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        handler = logging.FileHandler(
+            log_dir / "system_health.log",
+            encoding="utf-8",
+        )
+        handler.setFormatter(logging.Formatter(
+            "%(asctime)s %(levelname)s %(name)s: %(message)s"
+        ))
+        LOGGER.addHandler(handler)
+        return True
+
+    except OSError:
+        return False
 
 
 def classify_disk_status(free_percent):
@@ -26,7 +55,6 @@ def generate_report(disk_usage=None, home=None):
     home = Path(home) if home is not None else Path.home()
     drive = home.anchor or str(home)
 
-    # Allow controlled disk measurements in automated tests.
     disk = disk_usage if disk_usage is not None else shutil.disk_usage(drive)
 
     if disk.total <= 0:
@@ -88,11 +116,19 @@ def save_report(report, output_dir=Path("reports"), timestamp=None):
 
 
 def main():
+    configure_logging()
+
     home = Path.home()
     drive = home.anchor or str(home)
+
     try:
         disk = shutil.disk_usage(drive)
     except OSError as error:
+        LOGGER.error(
+            "Unable to measure disk usage for %s: %s",
+            drive,
+            error,
+        )
         print(
             f"ERROR: Unable to measure disk usage for {drive}: {error}",
             file=sys.stderr,
@@ -105,16 +141,23 @@ def main():
     try:
         report_path = save_report(report)
     except OSError as error:
+        LOGGER.error("Unable to save health report: %s", error)
         print(
             f"\nERROR: Unable to save health report: {error}",
             file=sys.stderr,
         )
         return 3
 
-    print(f"\nReport saved to: {report_path.resolve()}")
-
     free_percent = disk.free / disk.total * 100
     status = classify_disk_status(free_percent)
+
+    LOGGER.info(
+        "Health check completed. Disk status: %s; free space: %.2f%%",
+        status,
+        free_percent,
+    )
+
+    print(f"\nReport saved to: {report_path.resolve()}")
 
     return {"HEALTHY": 0, "WARNING": 1, "CRITICAL": 2}[status]
 

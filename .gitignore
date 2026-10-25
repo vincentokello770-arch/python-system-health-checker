@@ -8,3 +8,6 @@ venv/
 
 # Generated health reports
 reports/
+
+# Application logs
+logs/

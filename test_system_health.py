@@ -1,16 +1,19 @@
-﻿import io
-import unittest
+﻿
+import io
 import platform
 import shutil
 import sys
 import tempfile
+import unittest
 from collections import namedtuple
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
 from system_health import (
+    LOGGER,
     classify_disk_status,
+    configure_logging,
     generate_report,
     main,
     save_report,
@@ -32,7 +35,9 @@ class TestSystemHealth(unittest.TestCase):
         self.assertTrue(Path.home().is_dir())
 
     def test_disk_usage_is_valid(self):
-        usage = shutil.disk_usage(Path.home().anchor or str(Path.home()))
+        usage = shutil.disk_usage(
+            Path.home().anchor or str(Path.home())
+        )
         self.assertGreater(usage.total, 0)
         self.assertGreaterEqual(usage.free, 0)
         self.assertGreaterEqual(usage.used, 0)
@@ -81,21 +86,36 @@ class TestSystemHealth(unittest.TestCase):
         stdout = io.StringIO()
 
         with (
-            patch("system_health.shutil.disk_usage",
-                  return_value=simulated_disk),
-            patch("system_health.generate_report",
-                  return_value="Simulated health report"),
-            patch("system_health.save_report",
-                  side_effect=OSError("simulated disk write failure")),
+            patch(
+                "system_health.shutil.disk_usage",
+                return_value=simulated_disk,
+            ),
+            patch(
+                "system_health.generate_report",
+                return_value="Simulated health report",
+            ),
+            patch(
+                "system_health.save_report",
+                side_effect=OSError("simulated disk write failure"),
+            ),
             redirect_stderr(stderr),
             redirect_stdout(stdout),
         ):
             exit_code = main()
 
         self.assertEqual(exit_code, 3)
-        self.assertIn("ERROR: Unable to save health report", stderr.getvalue())
-        self.assertIn("simulated disk write failure", stderr.getvalue())
-        self.assertIn("Simulated health report", stdout.getvalue())
+        self.assertIn(
+            "ERROR: Unable to save health report",
+            stderr.getvalue(),
+        )
+        self.assertIn(
+            "simulated disk write failure",
+            stderr.getvalue(),
+        )
+        self.assertIn(
+            "Simulated health report",
+            stdout.getvalue(),
+        )
         self.assertNotIn("Report saved to:", stdout.getvalue())
 
     def test_healthy_disk_status(self):
@@ -119,7 +139,6 @@ class TestSystemHealth(unittest.TestCase):
                     classify_disk_status(value)
 
     def test_simulated_critical_disk_appears_in_report(self):
-        # Simulate a 100 GiB disk with only 4 GiB free.
         simulated_disk = DiskUsage(
             total=100 * 1024**3,
             used=96 * 1024**3,
@@ -135,8 +154,6 @@ class TestSystemHealth(unittest.TestCase):
         self.assertIn("Free space    : 4.00%", report)
         self.assertIn("Severity      : CRITICAL", report)
 
-
-
     def test_main_returns_4_when_disk_measurement_fails(self):
         stdout = io.StringIO()
         stderr = io.StringIO()
@@ -144,7 +161,9 @@ class TestSystemHealth(unittest.TestCase):
         with (
             patch(
                 "system_health.shutil.disk_usage",
-                side_effect=OSError("simulated disk measurement failure"),
+                side_effect=OSError(
+                    "simulated disk measurement failure"
+                ),
             ),
             patch("system_health.generate_report") as generate_report_mock,
             patch("system_health.save_report") as save_report_mock,
@@ -165,6 +184,40 @@ class TestSystemHealth(unittest.TestCase):
         self.assertEqual(stdout.getvalue(), "")
         generate_report_mock.assert_not_called()
         save_report_mock.assert_not_called()
+
+    def test_configure_logging_writes_to_file(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            log_dir = Path(temp_dir)
+
+            try:
+                self.assertTrue(configure_logging(log_dir))
+
+                LOGGER.error("Test diagnostic message")
+
+                for handler in LOGGER.handlers:
+                    handler.flush()
+
+                log_file = log_dir / "system_health.log"
+
+                self.assertTrue(log_file.is_file())
+                self.assertIn(
+                    "Test diagnostic message",
+                    log_file.read_text(encoding="utf-8"),
+                )
+            finally:
+                for handler in LOGGER.handlers[:]:
+                    LOGGER.removeHandler(handler)
+                    handler.close()
+
+    def test_logging_setup_failure_does_not_crash(self):
+        with patch(
+            "system_health.Path.mkdir",
+            side_effect=OSError("simulated logging setup failure"),
+        ):
+            result = configure_logging(Path("unavailable_logs"))
+
+        self.assertFalse(result)
+
 
 if __name__ == "__main__":
     unittest.main()
