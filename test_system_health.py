@@ -1,14 +1,18 @@
-﻿import unittest
+﻿import io
+import unittest
 import platform
 import shutil
 import sys
 import tempfile
 from collections import namedtuple
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from unittest.mock import patch
 
 from system_health import (
     classify_disk_status,
     generate_report,
+    main,
     save_report,
 )
 
@@ -55,6 +59,45 @@ class TestSystemHealth(unittest.TestCase):
                 "Test health report",
             )
 
+    def test_save_report_rejects_file_as_output_directory(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            blocker = Path(temp_dir) / "not_a_directory"
+            blocker.write_text("blocking file", encoding="utf-8")
+
+            with self.assertRaises(FileExistsError):
+                save_report(
+                    "Test report",
+                    output_dir=blocker,
+                    timestamp="failure_test",
+                )
+
+    def test_main_returns_3_when_report_saving_fails(self):
+        simulated_disk = DiskUsage(
+            total=100 * 1024**3,
+            used=40 * 1024**3,
+            free=60 * 1024**3,
+        )
+        stderr = io.StringIO()
+        stdout = io.StringIO()
+
+        with (
+            patch("system_health.shutil.disk_usage",
+                  return_value=simulated_disk),
+            patch("system_health.generate_report",
+                  return_value="Simulated health report"),
+            patch("system_health.save_report",
+                  side_effect=OSError("simulated disk write failure")),
+            redirect_stderr(stderr),
+            redirect_stdout(stdout),
+        ):
+            exit_code = main()
+
+        self.assertEqual(exit_code, 3)
+        self.assertIn("ERROR: Unable to save health report", stderr.getvalue())
+        self.assertIn("simulated disk write failure", stderr.getvalue())
+        self.assertIn("Simulated health report", stdout.getvalue())
+        self.assertNotIn("Report saved to:", stdout.getvalue())
+
     def test_healthy_disk_status(self):
         self.assertEqual(classify_disk_status(50.0), "HEALTHY")
         self.assertEqual(classify_disk_status(10.01), "HEALTHY")
@@ -76,7 +119,7 @@ class TestSystemHealth(unittest.TestCase):
                     classify_disk_status(value)
 
     def test_simulated_critical_disk_appears_in_report(self):
-        # Simulate a 100 GB disk with only 4 GB free.
+        # Simulate a 100 GiB disk with only 4 GiB free.
         simulated_disk = DiskUsage(
             total=100 * 1024**3,
             used=96 * 1024**3,

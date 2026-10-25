@@ -95,7 +95,15 @@ def main():
     report = generate_report(disk_usage=disk, home=home)
     print(report)
 
-    report_path = save_report(report)
+    try:
+        report_path = save_report(report)
+    except OSError as error:
+        print(
+            f"\nERROR: Unable to save health report: {error}",
+            file=sys.stderr,
+        )
+        return 3
+
     print(f"\nReport saved to: {report_path.resolve()}")
 
     free_percent = disk.free / disk.total * 100
