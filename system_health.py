@@ -90,7 +90,14 @@ def save_report(report, output_dir=Path("reports"), timestamp=None):
 def main():
     home = Path.home()
     drive = home.anchor or str(home)
-    disk = shutil.disk_usage(drive)
+    try:
+        disk = shutil.disk_usage(drive)
+    except OSError as error:
+        print(
+            f"ERROR: Unable to measure disk usage for {drive}: {error}",
+            file=sys.stderr,
+        )
+        return 4
 
     report = generate_report(disk_usage=disk, home=home)
     print(report)

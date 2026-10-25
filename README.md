@@ -1,4 +1,4 @@
-﻿# Python System Health Checker
+# Python System Health Checker
 
 A lightweight Python utility that collects local system information, evaluates disk-space health against explicit thresholds, generates a readable health report, and returns a severity-based process exit code for automation.
 
@@ -54,6 +54,7 @@ The `generate_report()` function accepts an optional disk-usage object.
 | Above 5% and up to 10% | WARNING | 1 |
 | 5% or below | CRITICAL | 2 |
 | Report cannot be saved | REPORT ERROR | 3 |
+| Disk usage cannot be measured | MEASUREMENT ERROR | 4 |
 
 The boundaries are intentional: exactly 10% is WARNING, and exactly 5% is CRITICAL.
 
@@ -70,8 +71,9 @@ These values are demonstration defaults, not universal production standards. A p
 3. Calculate free disk space as a percentage of total capacity.
 4. Classify the result as HEALTHY, WARNING, or CRITICAL.
 5. Collect system information and check Desktop, Documents, and Downloads.
-6. Print a report and save it under `reports/`.
-7. Save the report, then return the disk-severity exit code; return `3` if report saving fails.
+6. Print the report.
+7. Return `4` with a diagnostic if disk measurement fails.
+8. Save the report under `reports/`, then return the disk-severity exit code; return `3` if report saving fails.
 
 ## 5. Requirements
 
@@ -113,6 +115,7 @@ The second command displays the exit code from the Python process.
 - `1`: WARNING
 - `2`: CRITICAL
 - `3`: Report-saving failure; inspect the error printed to standard error.
+- `4`: Disk-measurement failure; inspect the error printed to standard error.
 
 Run the commands consecutively in the same PowerShell session so another command does not replace the exit-code value.
 
@@ -134,6 +137,7 @@ The test suite covers:
 - Healthy, warning, and critical classification.
 - Invalid percentage rejection.
 - A simulated critical-disk report.
+- Disk-measurement and report-saving failure handling.
 
 The tests use controlled disk measurements to validate critical conditions without filling the real disk.
 
@@ -141,7 +145,7 @@ The tests use controlled disk measurements to validate critical conditions witho
 
 Latest local verification for this project revision:
 
-- **13 automated tests passed.**
+- **14 automated tests passed.**
 - The simulated disk scenario used a 100 GiB disk with 4 GiB free.
 - The simulated scenario was correctly classified as CRITICAL.
 - The live Windows run detected 12.55 GB free out of 476.73 GB, or 2.63%, and classified it as CRITICAL.
@@ -160,7 +164,7 @@ The latest local test result does not, by itself, establish that the modified co
 - Automated tests run through Python's built-in `unittest` framework.
 - GitHub Actions is configured to run tests on pushes and pull requests to `main` across Python 3.10, 3.11, and 3.12.
 
-The application catches `OSError` exceptions during report saving, prints a diagnostic to standard error, and returns exit code `3`. It does not retry failed writes. Structured logs and alert delivery are not implemented.
+The application catches `OSError` exceptions during disk measurement and report saving. Disk-measurement failures print a diagnostic to standard error and return exit code `4`; report-saving failures return exit code `3`. It does not retry failed operations. Structured logs and alert delivery are not implemented.
 
 ### Security
 
@@ -186,12 +190,12 @@ A larger deployment should also consider absolute free-space thresholds, disk gr
 - Checks directory existence, not directory permissions or application functionality.
 - Uses fixed severity thresholds in the current implementation.
 - Does not send notifications or retain historical metrics in a structured database.
-- Report-saving failures are handled and tested, but failures during disk measurement and report generation are not yet explicitly handled.
+- Disk-measurement and report-saving failures are handled and tested. Failures during report generation are not yet explicitly handled.
 - Does not implement a service, daemon, scheduler, or remote monitoring agent.
 
 ## 11. Planned Improvements
 
-1. Add tests and explicit handling for disk-measurement and report-generation failures.
+1. Add explicit handling and tests for report-generation failures.
 2. Make severity thresholds configurable through command-line arguments or a configuration file.
 3. Add machine-readable JSON output for integration with monitoring tools.
 4. Add tests for process exit codes.

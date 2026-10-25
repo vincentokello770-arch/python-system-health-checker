@@ -136,5 +136,35 @@ class TestSystemHealth(unittest.TestCase):
         self.assertIn("Severity      : CRITICAL", report)
 
 
+
+    def test_main_returns_4_when_disk_measurement_fails(self):
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+
+        with (
+            patch(
+                "system_health.shutil.disk_usage",
+                side_effect=OSError("simulated disk measurement failure"),
+            ),
+            patch("system_health.generate_report") as generate_report_mock,
+            patch("system_health.save_report") as save_report_mock,
+            redirect_stdout(stdout),
+            redirect_stderr(stderr),
+        ):
+            exit_code = main()
+
+        self.assertEqual(exit_code, 4)
+        self.assertIn(
+            "ERROR: Unable to measure disk usage",
+            stderr.getvalue(),
+        )
+        self.assertIn(
+            "simulated disk measurement failure",
+            stderr.getvalue(),
+        )
+        self.assertEqual(stdout.getvalue(), "")
+        generate_report_mock.assert_not_called()
+        save_report_mock.assert_not_called()
+
 if __name__ == "__main__":
     unittest.main()
